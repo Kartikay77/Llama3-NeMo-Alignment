@@ -1,0 +1,48 @@
+name: llama3_dpo_alignment
+
+trainer:
+  devices: 1
+  accelerator: gpu
+  precision: bf16  # Crucial for Llama-3 stability
+  max_epochs: 1
+  log_every_n_steps: 10
+  val_check_interval: 0.1
+
+model:
+  # In Phase 3, you will convert the HF model to this .nemo path
+  restore_from_path: "/workspace/llama3_8b.nemo" 
+  
+  # ---------------------------------------------------------
+  # RESUME WIN: Parameter Efficient Fine Tuning (PEFT/LoRA)
+  # ---------------------------------------------------------
+  peft:
+    peft_scheme: "lora"
+    lora_tuning:
+      adapter_dim: 32   # Rank (r)
+      alpha: 16         # Scaling factor
+      dropout: 0.05
+      target_modules: ['gate_proj', 'o_proj', 'k_proj', 'q_proj', 'up_proj', 'v_proj', 'down_proj']
+
+  # ---------------------------------------------------------
+  # RESUME WIN: Direct Preference Optimization (DPO) Config
+  # ---------------------------------------------------------
+  dpo:
+    ref_policy_kl_penalty: 0.1  # The "Beta" hyperparameter you ablated
+    loss_type: "dpo"
+    log_prob_forward_micro_batch_size: 1
+
+  data:
+    train_ds:
+      file_path: "dpo_train.jsonl"
+      batch_size: 1
+      shuffle: true
+      max_seq_length: 2048
+      num_workers: 4
+
+  optim:
+    name: fused_adam
+    lr: 5e-6
+    weight_decay: 0.01
+    sched:
+      name: CosineAnnealing
+      warmup_steps: 50
